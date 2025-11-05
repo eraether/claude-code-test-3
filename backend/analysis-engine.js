@@ -591,17 +591,20 @@ class AnalysisEngine {
 
         const question = record.question.toLowerCase();
 
-        if (question.includes('diabetes') && question.includes('prevalence')) {
+        // Only use ADULT metrics, not high school students
+        if (question.includes('diabetes') && question.includes('among adults')) {
           metrics.diabetes = value;
-        } else if (question.includes('obesity')) {
+        } else if (question.includes('obesity') && question.includes('among adults')) {
           metrics.obesity = value;
-        } else if (question.includes('smoking') || question.includes('tobacco')) {
+        } else if (question.includes('smoking') && question.includes('among adults')) {
+          metrics.smoking = value;
+        } else if (question.includes('current cigarette smoking') && question.includes('among adults')) {
           metrics.smoking = value;
         } else if (question.includes('cancer') && question.includes('mortality')) {
           metrics.cancer = value;
         } else if (question.includes('cardiovascular') && question.includes('mortality')) {
           metrics.cvd = value;
-        } else if (question.includes('physical activity')) {
+        } else if (question.includes('physical activity') && question.includes('among adults')) {
           metrics.exercise = value;
         }
       });
