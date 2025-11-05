@@ -61,8 +61,22 @@ class AnalysisEngine {
     }
 
     try {
-      const params = new URLSearchParams({ ...query, $limit: limit });
-      const response = await axios.get(`${CDC_API_BASE}?${params}`);
+      // Build query string manually to avoid issues with special characters
+      const queryParts = [];
+      for (const [key, value] of Object.entries(query)) {
+        if (value !== undefined && value !== null && value !== '') {
+          queryParts.push(`${encodeURIComponent(key)}=${encodeURIComponent(value)}`);
+        }
+      }
+      queryParts.push(`$limit=${limit}`);
+
+      const url = `${CDC_API_BASE}?${queryParts.join('&')}`;
+      console.log('Fetching:', url.substring(0, 150));
+
+      const response = await axios.get(url, {
+        maxRedirects: 5,
+        timeout: 30000
+      });
       const data = response.data;
       this.cache.set(cacheKey, data);
       return data;
