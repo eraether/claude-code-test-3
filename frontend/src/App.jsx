@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
 import { api } from './services/api';
 import Dashboard from './components/Dashboard';
+import InsightsView from './components/InsightsView';
+import HealthRankingsView from './components/HealthRankingsView';
 import TimeSeriesView from './components/TimeSeriesView';
 import StateComparisonView from './components/StateComparisonView';
 import DataExplorer from './components/DataExplorer';
@@ -61,8 +63,8 @@ function App() {
     <div className="app">
       <header className="header">
         <div className="header-content">
-          <h1>🏥 US Health Insights Dashboard</h1>
-          <p>Interactive exploration of U.S. Chronic Disease Indicators</p>
+          <h1>🧠 US Health Intelligence Platform</h1>
+          <p>AI-powered analysis & insights from U.S. Chronic Disease data</p>
           <p className="source">
             Data source: <strong>data.gov</strong> | CDC U.S. Chronic Disease Indicators
           </p>
@@ -77,6 +79,19 @@ function App() {
               onClick={() => setCurrentView('dashboard')}
             >
               📊 Dashboard
+            </button>
+            <button
+              className={`btn ${currentView === 'insights' ? 'btn-primary' : 'btn-secondary'}`}
+              onClick={() => setCurrentView('insights')}
+              style={{ background: currentView === 'insights' ? 'linear-gradient(135deg, var(--primary-color), var(--secondary-color))' : undefined }}
+            >
+              🧠 AI Insights
+            </button>
+            <button
+              className={`btn ${currentView === 'rankings' ? 'btn-primary' : 'btn-secondary'}`}
+              onClick={() => setCurrentView('rankings')}
+            >
+              🏆 Health Rankings
             </button>
             <button
               className={`btn ${currentView === 'timeseries' ? 'btn-primary' : 'btn-secondary'}`}
@@ -101,6 +116,14 @@ function App() {
 
         {currentView === 'dashboard' && (
           <Dashboard topics={topics} states={states} />
+        )}
+
+        {currentView === 'insights' && (
+          <InsightsView />
+        )}
+
+        {currentView === 'rankings' && (
+          <HealthRankingsView states={states} />
         )}
 
         {currentView === 'timeseries' && (

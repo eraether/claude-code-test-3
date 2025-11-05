@@ -2,6 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const axios = require('axios');
 const NodeCache = require('node-cache');
+const analysisEngine = require('./analysis-engine');
 require('dotenv').config();
 
 const app = express();
@@ -293,6 +294,71 @@ app.get('/api/summary', async (req, res) => {
   } catch (error) {
     console.error('Error fetching summary:', error.message);
     res.status(500).json({ error: 'Failed to fetch summary' });
+  }
+});
+
+// ============================================
+// INTELLIGENT ANALYSIS ENDPOINTS
+// ============================================
+
+// Get AI-generated insights
+app.get('/api/insights', async (req, res) => {
+  try {
+    console.log('Generating intelligent insights...');
+    const insights = await analysisEngine.generateInsights();
+    res.json(insights);
+  } catch (error) {
+    console.error('Error generating insights:', error.message);
+    res.status(500).json({ error: 'Failed to generate insights' });
+  }
+});
+
+// Get health rankings for all states
+app.get('/api/health-rankings', async (req, res) => {
+  try {
+    const { year = 2021 } = req.query;
+    const cacheKey = `rankings_${year}`;
+    const cached = cache.get(cacheKey);
+
+    if (cached) {
+      return res.json(cached);
+    }
+
+    console.log(`Calculating health rankings for ${year}...`);
+    const rankings = await analysisEngine.getHealthRankings(parseInt(year));
+
+    cache.set(cacheKey, rankings, 7200); // Cache for 2 hours
+    res.json(rankings);
+  } catch (error) {
+    console.error('Error calculating health rankings:', error.message);
+    res.status(500).json({ error: 'Failed to calculate health rankings' });
+  }
+});
+
+// Get health score for a specific state
+app.get('/api/health-score/:state', async (req, res) => {
+  try {
+    const { state } = req.params;
+    const { year = 2021 } = req.query;
+
+    const cacheKey = `score_${state}_${year}`;
+    const cached = cache.get(cacheKey);
+
+    if (cached) {
+      return res.json(cached);
+    }
+
+    const score = await analysisEngine.calculateHealthScore(state, parseInt(year));
+
+    if (!score) {
+      return res.status(404).json({ error: 'Insufficient data for health score calculation' });
+    }
+
+    cache.set(cacheKey, score, 7200);
+    res.json(score);
+  } catch (error) {
+    console.error('Error calculating health score:', error.message);
+    res.status(500).json({ error: 'Failed to calculate health score' });
   }
 });
 

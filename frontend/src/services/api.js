@@ -65,5 +65,25 @@ export const api = {
   getSummary: async () => {
     const response = await axios.get(`${API_BASE}/summary`);
     return response.data;
+  },
+
+  // ===== INTELLIGENT ANALYSIS =====
+
+  // Get AI-generated insights
+  getInsights: async () => {
+    const response = await axios.get(`${API_BASE}/insights`);
+    return response.data;
+  },
+
+  // Get health rankings
+  getHealthRankings: async (year = 2021) => {
+    const response = await axios.get(`${API_BASE}/health-rankings?year=${year}`);
+    return response.data;
+  },
+
+  // Get health score for a state
+  getHealthScore: async (state, year = 2021) => {
+    const response = await axios.get(`${API_BASE}/health-score/${state}?year=${year}`);
+    return response.data;
   }
 };
