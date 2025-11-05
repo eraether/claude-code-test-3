@@ -1,6 +1,21 @@
-const axios = require('axios');
+const { execSync } = require('child_process');
 
 const CDC_API_BASE = 'https://data.cdc.gov/resource/hksd-2xuw.json';
+
+// Helper to fetch data using curl (works in this environment where axios/https fail)
+function curlGet(url) {
+  try {
+    // Use single quotes to prevent shell interpretation of $ in $limit
+    const result = execSync(`curl -s '${url}'`, {
+      encoding: 'utf8',
+      timeout: 30000,
+      maxBuffer: 10 * 1024 * 1024 // 10MB
+    });
+    return JSON.parse(result);
+  } catch (error) {
+    throw new Error(`Curl failed: ${error.message}`);
+  }
+}
 
 // Statistical utilities
 const mean = (arr) => arr.reduce((a, b) => a + b, 0) / arr.length;
@@ -61,9 +76,25 @@ class AnalysisEngine {
     }
 
     try {
-      const params = new URLSearchParams({ ...query, $limit: limit });
-      const response = await axios.get(`${CDC_API_BASE}?${params}`);
-      const data = response.data;
+      // Build query string manually
+      const queryParts = [];
+      for (const [key, value] of Object.entries(query)) {
+        if (value !== undefined && value !== null && value !== '') {
+          // Don't encode $ in key names (for $limit, $where, etc.)
+          const encodedKey = key.startsWith('$') ? key : encodeURIComponent(key);
+          queryParts.push(`${encodedKey}=${encodeURIComponent(value)}`);
+        }
+      }
+
+      // Only add $limit if not already in query
+      if (!query.$limit && !query['$limit']) {
+        queryParts.push(`$limit=${limit}`);
+      }
+
+      const url = `${CDC_API_BASE}?${queryParts.join('&')}`;
+      console.log('Fetching:', url.substring(0, 120) + '...');
+
+      const data = curlGet(url); // Using curl since it works in this environment
       this.cache.set(cacheKey, data);
       return data;
     } catch (error) {
@@ -623,6 +654,13 @@ class AnalysisEngine {
 
     // Get list of states
     const statesData = await this.fetchData({ yearstart: year, $limit: 1000 });
+
+    // Handle case where fetchData returns empty or error
+    if (!Array.isArray(statesData) || statesData.length === 0) {
+      console.error('Failed to fetch states data or empty result');
+      return [];
+    }
+
     const states = [...new Set(statesData
       .map(r => ({ abbr: r.locationabbr, name: r.locationdesc }))
       .filter(s => s.abbr && s.abbr !== 'US' && s.abbr.length === 2)
