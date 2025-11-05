@@ -103,6 +103,65 @@ class AnalysisEngine {
     }
   }
 
+  // Get data quality warnings
+  getDataQualityWarnings() {
+    return {
+      dataSource: 'CDC BRFSS (Behavioral Risk Factor Surveillance System)',
+      collectionMethod: 'Self-reported telephone surveys',
+      warnings: [
+        {
+          level: 'critical',
+          message: 'All obesity and health behavior data is SELF-REPORTED, not measured',
+          impact: 'Obesity rates likely underestimated by 5-10 percentage points'
+        },
+        {
+          level: 'high',
+          message: 'Phone surveys may undersample certain demographics',
+          impact: 'Young adults, non-English speakers, and mobile-only households may be underrepresented'
+        },
+        {
+          level: 'high',
+          message: '"Overall" aggregation masks ethnic/racial disparities',
+          impact: 'State averages hide significant differences between demographic groups (e.g., Native Hawaiian/Pacific Islander obesity ~45-50% vs Asian ~15-20%)'
+        },
+        {
+          level: 'medium',
+          message: 'Social desirability bias in self-reporting',
+          impact: 'Respondents may underreport weight and overreport healthy behaviors'
+        },
+        {
+          level: 'medium',
+          message: 'Year-to-year variations may reflect survey changes, not actual trends',
+          impact: 'Some apparent trends could be artifacts of methodology changes'
+        }
+      ],
+      recommendations: [
+        'Treat obesity rates as MINIMUM estimates - actual rates likely 5-10% higher',
+        'View demographic breakdowns when available instead of "Overall" aggregates',
+        'Cross-reference with measured data (NHANES) when making policy decisions',
+        'Consider state rankings more reliable than absolute values',
+        'Be especially cautious with states having diverse populations'
+      ],
+      knownIssues: [
+        {
+          state: 'Hawaii',
+          issue: 'Aggregate obesity (25.9%) masks Native Hawaiian/Pacific Islander rates (~45-50%)',
+          note: 'Large Asian population (~38% of state) has lower obesity rates, pulling overall average down'
+        },
+        {
+          state: 'California',
+          issue: 'High ethnic diversity means "Overall" figures may not represent any specific community',
+          note: 'Hispanic, Asian, and White populations have very different health profiles'
+        },
+        {
+          state: 'Alaska',
+          issue: 'Alaska Native populations have different health patterns than state averages',
+          note: 'Rural Alaska Native communities may be undersampled in phone surveys'
+        }
+      ]
+    };
+  }
+
   // Generate comprehensive insights
   async generateInsights() {
     const insights = [];
@@ -135,7 +194,16 @@ class AnalysisEngine {
     // Sort by significance
     insights.sort((a, b) => b.significance - a.significance);
 
-    return insights;
+    return {
+      insights,
+      dataQuality: this.getDataQualityWarnings(),
+      metadata: {
+        totalInsights: insights.length,
+        dataSource: 'CDC U.S. Chronic Disease Indicators',
+        apiEndpoint: 'data.cdc.gov/resource/hksd-2xuw.json',
+        generated: new Date().toISOString()
+      }
+    };
   }
 
   // Analyze which states have improved the most
@@ -684,8 +752,19 @@ class AnalysisEngine {
 
     rankings.sort((a, b) => b.score - a.score);
 
-    return rankings;
+    return {
+      rankings,
+      dataQuality: this.getDataQualityWarnings(),
+      metadata: {
+        year,
+        statesAnalyzed: rankings.length,
+        note: 'Rankings based on composite scores from multiple weighted health indicators',
+        warning: 'All data is self-reported and likely underestimates obesity/health issues by 5-10%'
+      }
+    };
   }
 }
+
+
 
 module.exports = new AnalysisEngine();
