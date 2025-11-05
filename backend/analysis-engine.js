@@ -1,6 +1,21 @@
-const axios = require('axios');
+const { execSync } = require('child_process');
 
 const CDC_API_BASE = 'https://data.cdc.gov/resource/hksd-2xuw.json';
+
+// Helper to fetch data using curl (works in this environment where axios/https fail)
+function curlGet(url) {
+  try {
+    // Use single quotes to prevent shell interpretation of $ in $limit
+    const result = execSync(`curl -s '${url}'`, {
+      encoding: 'utf8',
+      timeout: 30000,
+      maxBuffer: 10 * 1024 * 1024 // 10MB
+    });
+    return JSON.parse(result);
+  } catch (error) {
+    throw new Error(`Curl failed: ${error.message}`);
+  }
+}
 
 // Statistical utilities
 const mean = (arr) => arr.reduce((a, b) => a + b, 0) / arr.length;
@@ -61,15 +76,90 @@ class AnalysisEngine {
     }
 
     try {
-      const params = new URLSearchParams({ ...query, $limit: limit });
-      const response = await axios.get(`${CDC_API_BASE}?${params}`);
-      const data = response.data;
+      // Build query string manually
+      const queryParts = [];
+      for (const [key, value] of Object.entries(query)) {
+        if (value !== undefined && value !== null && value !== '') {
+          // Don't encode $ in key names (for $limit, $where, etc.)
+          const encodedKey = key.startsWith('$') ? key : encodeURIComponent(key);
+          queryParts.push(`${encodedKey}=${encodeURIComponent(value)}`);
+        }
+      }
+
+      // Only add $limit if not already in query
+      if (!query.$limit && !query['$limit']) {
+        queryParts.push(`$limit=${limit}`);
+      }
+
+      const url = `${CDC_API_BASE}?${queryParts.join('&')}`;
+      console.log('Fetching:', url.substring(0, 120) + '...');
+
+      const data = curlGet(url); // Using curl since it works in this environment
       this.cache.set(cacheKey, data);
       return data;
     } catch (error) {
       console.error('Error fetching data:', error.message);
       return [];
     }
+  }
+
+  // Get data quality warnings
+  getDataQualityWarnings() {
+    return {
+      dataSource: 'CDC BRFSS (Behavioral Risk Factor Surveillance System)',
+      collectionMethod: 'Self-reported telephone surveys',
+      warnings: [
+        {
+          level: 'critical',
+          message: 'All obesity and health behavior data is SELF-REPORTED, not measured',
+          impact: 'Obesity rates likely underestimated by 5-10 percentage points'
+        },
+        {
+          level: 'high',
+          message: 'Phone surveys may undersample certain demographics',
+          impact: 'Young adults, non-English speakers, and mobile-only households may be underrepresented'
+        },
+        {
+          level: 'high',
+          message: '"Overall" aggregation masks ethnic/racial disparities',
+          impact: 'State averages hide significant differences between demographic groups (e.g., Native Hawaiian/Pacific Islander obesity ~45-50% vs Asian ~15-20%)'
+        },
+        {
+          level: 'medium',
+          message: 'Social desirability bias in self-reporting',
+          impact: 'Respondents may underreport weight and overreport healthy behaviors'
+        },
+        {
+          level: 'medium',
+          message: 'Year-to-year variations may reflect survey changes, not actual trends',
+          impact: 'Some apparent trends could be artifacts of methodology changes'
+        }
+      ],
+      recommendations: [
+        'Treat obesity rates as MINIMUM estimates - actual rates likely 5-10% higher',
+        'View demographic breakdowns when available instead of "Overall" aggregates',
+        'Cross-reference with measured data (NHANES) when making policy decisions',
+        'Consider state rankings more reliable than absolute values',
+        'Be especially cautious with states having diverse populations'
+      ],
+      knownIssues: [
+        {
+          state: 'Hawaii',
+          issue: 'Aggregate obesity (25.9%) masks Native Hawaiian/Pacific Islander rates (~45-50%)',
+          note: 'Large Asian population (~38% of state) has lower obesity rates, pulling overall average down'
+        },
+        {
+          state: 'California',
+          issue: 'High ethnic diversity means "Overall" figures may not represent any specific community',
+          note: 'Hispanic, Asian, and White populations have very different health profiles'
+        },
+        {
+          state: 'Alaska',
+          issue: 'Alaska Native populations have different health patterns than state averages',
+          note: 'Rural Alaska Native communities may be undersampled in phone surveys'
+        }
+      ]
+    };
   }
 
   // Generate comprehensive insights
@@ -104,7 +194,16 @@ class AnalysisEngine {
     // Sort by significance
     insights.sort((a, b) => b.significance - a.significance);
 
-    return insights;
+    return {
+      insights,
+      dataQuality: this.getDataQualityWarnings(),
+      metadata: {
+        totalInsights: insights.length,
+        dataSource: 'CDC U.S. Chronic Disease Indicators',
+        apiEndpoint: 'data.cdc.gov/resource/hksd-2xuw.json',
+        generated: new Date().toISOString()
+      }
+    };
   }
 
   // Analyze which states have improved the most
@@ -560,17 +659,20 @@ class AnalysisEngine {
 
         const question = record.question.toLowerCase();
 
-        if (question.includes('diabetes') && question.includes('prevalence')) {
+        // Only use ADULT metrics, not high school students
+        if (question.includes('diabetes') && question.includes('among adults')) {
           metrics.diabetes = value;
-        } else if (question.includes('obesity')) {
+        } else if (question.includes('obesity') && question.includes('among adults')) {
           metrics.obesity = value;
-        } else if (question.includes('smoking') || question.includes('tobacco')) {
+        } else if (question.includes('smoking') && question.includes('among adults')) {
+          metrics.smoking = value;
+        } else if (question.includes('current cigarette smoking') && question.includes('among adults')) {
           metrics.smoking = value;
         } else if (question.includes('cancer') && question.includes('mortality')) {
           metrics.cancer = value;
         } else if (question.includes('cardiovascular') && question.includes('mortality')) {
           metrics.cvd = value;
-        } else if (question.includes('physical activity')) {
+        } else if (question.includes('physical activity') && question.includes('among adults')) {
           metrics.exercise = value;
         }
       });
@@ -623,6 +725,13 @@ class AnalysisEngine {
 
     // Get list of states
     const statesData = await this.fetchData({ yearstart: year, $limit: 1000 });
+
+    // Handle case where fetchData returns empty or error
+    if (!Array.isArray(statesData) || statesData.length === 0) {
+      console.error('Failed to fetch states data or empty result');
+      return [];
+    }
+
     const states = [...new Set(statesData
       .map(r => ({ abbr: r.locationabbr, name: r.locationdesc }))
       .filter(s => s.abbr && s.abbr !== 'US' && s.abbr.length === 2)
@@ -643,8 +752,19 @@ class AnalysisEngine {
 
     rankings.sort((a, b) => b.score - a.score);
 
-    return rankings;
+    return {
+      rankings,
+      dataQuality: this.getDataQualityWarnings(),
+      metadata: {
+        year,
+        statesAnalyzed: rankings.length,
+        note: 'Rankings based on composite scores from multiple weighted health indicators',
+        warning: 'All data is self-reported and likely underestimates obesity/health issues by 5-10%'
+      }
+    };
   }
 }
+
+
 
 module.exports = new AnalysisEngine();

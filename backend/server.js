@@ -325,10 +325,10 @@ app.get('/api/health-rankings', async (req, res) => {
     }
 
     console.log(`Calculating health rankings for ${year}...`);
-    const rankings = await analysisEngine.getHealthRankings(parseInt(year));
+    const result = await analysisEngine.getHealthRankings(parseInt(year));
 
-    cache.set(cacheKey, rankings, 7200); // Cache for 2 hours
-    res.json(rankings);
+    cache.set(cacheKey, result, 7200); // Cache for 2 hours
+    res.json(result);
   } catch (error) {
     console.error('Error calculating health rankings:', error.message);
     res.status(500).json({ error: 'Failed to calculate health rankings' });
@@ -354,8 +354,16 @@ app.get('/api/health-score/:state', async (req, res) => {
       return res.status(404).json({ error: 'Insufficient data for health score calculation' });
     }
 
-    cache.set(cacheKey, score, 7200);
-    res.json(score);
+    // Add data quality warnings
+    const result = {
+      ...score,
+      dataQuality: analysisEngine.getDataQualityWarnings(),
+      stateSpecificWarnings: analysisEngine.getDataQualityWarnings().knownIssues
+        .filter(issue => issue.state === state.toUpperCase())
+    };
+
+    cache.set(cacheKey, result, 7200);
+    res.json(result);
   } catch (error) {
     console.error('Error calculating health score:', error.message);
     res.status(500).json({ error: 'Failed to calculate health score' });
